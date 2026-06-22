@@ -74,6 +74,35 @@ npm run refresh
 codex -p ccswitch-gateway
 ```
 
+## Electron 桌面控制台
+
+如果不想敲命令，可以用桌面控制台管理网关。
+
+### 安装和启动
+
+```bash
+npm install
+npm run electron
+```
+
+### 能做什么
+
+- 查看网关状态（是否在线、模型数、provider 数）
+- 查看模型列表和 provider 配置
+- 安装 / 卸载 / 重启 launchd 服务
+- 向任意模型发送测试请求，验证连通性
+- 查看网关日志
+- 生成 Codex profile
+- 自动监听 CC Switch DB 变化，刷新模型列表
+
+### 不能做什么
+
+控制台不会替代 CC Switch。添加模型、修改 API Key、编辑 base URL 仍然在 CC Switch 里做。控制台不会修改 `~/.codex/config.toml`，也不会编辑 `~/.cc-switch/cc-switch.db`。
+
+### 详细说明
+
+见 [Electron 控制台使用指南](./electron-console-guide.md)。
+
 ## 常用命令
 
 ```bash

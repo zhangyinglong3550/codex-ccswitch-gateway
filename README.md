@@ -118,6 +118,7 @@ npm run service:install
 npm run service:uninstall
 npm run history:unify:dry-run
 npm run history:unify
+npm run electron
 ```
 
 ## 健康检查
