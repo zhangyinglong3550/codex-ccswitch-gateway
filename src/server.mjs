@@ -10,7 +10,7 @@ import {
   providerKind,
   readCodexProviders
 } from "./ccswitch.mjs";
-import { chatToResponse, contentToText, extractNamespaceMap, responsesToChat, streamChatToResponses, writeResponseSse } from "./translator.mjs";
+import { chatToResponse, contentToResponsesInputContent, contentToText, extractNamespaceMap, responsesToChat, streamChatToResponses, writeResponseSse } from "./translator.mjs";
 import path from "node:path";
 
 const UPSTREAM_TIMEOUT_MS = Number(process.env.CODEX_CCSWITCH_UPSTREAM_TIMEOUT_MS || "180000");
@@ -143,6 +143,36 @@ function officialAuth() {
   return null;
 }
 
+function normalizeOfficialChatgptInput(input) {
+  if (!Array.isArray(input)) return input;
+  return input.map((item) => {
+    if (!item || typeof item !== "object") return item;
+    const content = Array.isArray(item.content) ? item.content : [];
+    const hasAssistantOutputContent = content.some((part) => (
+      part &&
+      typeof part === "object" &&
+      (part.type === "output_text" || part.type === "reasoning_text" || part.type === "summary_text")
+    ));
+    if (item.role === "assistant" || hasAssistantOutputContent) {
+      const text = contentToText(item.content ?? item.output ?? item.text ?? "");
+      if (!text) {
+        return { ...item, type: "message", role: "assistant", content: [] };
+      }
+      return {
+        type: "message",
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: `Previous assistant response:\n${text}`
+          }
+        ]
+      };
+    }
+    return item;
+  });
+}
+
 function officialBody(body, backend) {
   const normalized = { ...body };
   if (!Object.prototype.hasOwnProperty.call(normalized, "instructions")) {
@@ -166,6 +196,7 @@ function officialBody(body, backend) {
     ];
   }
   if (backend === "chatgpt-codex") {
+    normalized.input = normalizeOfficialChatgptInput(normalized.input);
     delete normalized.max_output_tokens;
   }
   return normalized;
@@ -195,12 +226,12 @@ function responsesBody(body) {
       if (!item || typeof item !== "object") return item;
       if (item.type === "message" || item.role) {
         const role = item.role || "user";
-        const text = contentToText(item.content ?? item.output ?? item.text ?? "");
+        const content = contentToResponsesInputContent(item.content ?? item.output ?? item.text ?? "", role);
         return {
           ...item,
           type: "message",
           role,
-          content: [{ type: role === "assistant" ? "output_text" : "input_text", text }]
+          content
         };
       }
       if (item.type === "function_call_output") {
@@ -210,7 +241,7 @@ function responsesBody(body) {
     }).filter((item) => {
       if (!item || typeof item !== "object") return Boolean(item);
       if (item.type !== "message") return true;
-      return Boolean(item.content?.[0]?.text);
+      return Array.isArray(item.content) && item.content.length > 0;
     });
   }
   return normalized;

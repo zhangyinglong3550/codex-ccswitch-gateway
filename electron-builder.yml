@@ -3,6 +3,7 @@ productName: Codex CC Switch Gateway
 directories:
   output: dist
   buildResources: build
+afterPack: scripts/after-pack-mac.cjs
 files:
   - electron/**/*
   - bin/**/*

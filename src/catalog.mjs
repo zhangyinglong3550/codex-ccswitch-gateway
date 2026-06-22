@@ -61,6 +61,60 @@ function isUnsupportedProviderModel(provider, slug) {
   return Boolean(UNSUPPORTED_PROVIDER_MODELS[providerKind(provider)]?.has(slug));
 }
 
+function normalizeModalities(value) {
+  if (!value) return [];
+  const raw = Array.isArray(value) ? value : String(value).split(/[, ]+/);
+  return raw.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean);
+}
+
+function truthyCapability(value) {
+  if (value === true) return true;
+  if (typeof value === "string") return /^(true|yes|1|vision|image|multimodal)$/i.test(value.trim());
+  return false;
+}
+
+const TEXT_ONLY_MODEL_PATTERNS = [
+  /^glm-5(?:\.2|-turbo)?(?:\[1m\])?$/i,
+  /^glm-5\.1(?:\[1m\])?$/i,
+  /^deepseek-v4-(?:pro|flash)$/i,
+  /^mimo-v2\.5-pro(?:-.*)?$/i
+];
+
+const IMAGE_MODEL_PATTERNS = [
+  /^kimi-k2\.[567](?:-code|-code-highspeed)?$/i,
+  /^minimax-m3$/i,
+  /^glm-5v(?:-turbo)?$/i,
+  /^glm-4\.[56]v$/i,
+  /^mimo-v2\.5$/i,
+  /\bqwen[^ ]*(?:vl|omni|vision)\b/i,
+  /\b(?:vl|vision|multimodal|omni)\b/i
+];
+
+function modelSupportsImages(slug, provider, item = {}) {
+  const modalities = normalizeModalities(
+    item.input_modalities || item.inputModalities || item.modalities || item.supported_modalities || item.supportedModalities
+  );
+  if (modalities.includes("image") || modalities.includes("vision")) return true;
+
+  const capabilities = item.capabilities && typeof item.capabilities === "object" ? item.capabilities : {};
+  if (
+    truthyCapability(item.supportsImages) ||
+    truthyCapability(item.supports_images) ||
+    truthyCapability(item.vision) ||
+    truthyCapability(item.multimodal) ||
+    truthyCapability(capabilities.image) ||
+    truthyCapability(capabilities.vision) ||
+    truthyCapability(capabilities.multimodal)
+  ) {
+    return true;
+  }
+
+  const name = `${slug} ${item.displayName || item.display_name || ""} ${provider?.name || ""}`.toLowerCase();
+  const normalizedSlug = String(slug || "").trim();
+  if (TEXT_ONLY_MODEL_PATTERNS.some((pattern) => pattern.test(normalizedSlug))) return false;
+  return IMAGE_MODEL_PATTERNS.some((pattern) => pattern.test(normalizedSlug) || pattern.test(name));
+}
+
 function readBundledOfficialModels() {
   try {
     const out = execFileSync("codex", ["debug", "models", "--bundled"], {
@@ -81,8 +135,9 @@ function readBundledOfficialModels() {
   }
 }
 
-function modelFromSlug(slug, provider) {
+function modelFromSlug(slug, provider, item = {}) {
   const display = slug;
+  const inputModalities = modelSupportsImages(slug, provider, item) ? ["text", "image"] : ["text"];
   return {
     slug,
     display_name: display,
@@ -90,7 +145,7 @@ function modelFromSlug(slug, provider) {
     visibility: "list",
     priority: 1000,
     supported_in_api: true,
-    input_modalities: ["text"],
+    input_modalities: inputModalities,
     default_reasoning_level: "medium",
     supported_reasoning_levels: [
       { effort: "low", description: "Fast responses with lighter reasoning" },
@@ -98,6 +153,7 @@ function modelFromSlug(slug, provider) {
       { effort: "high", description: "More reasoning" }
     ],
     shell_type: "shell_command",
+    supports_image_detail_original: inputModalities.includes("image") ? true : undefined,
     "x-ccswitch-provider": provider.id,
     "x-ccswitch-provider-name": provider.name
   };
@@ -153,10 +209,11 @@ export function buildCatalog() {
         const slug = item.slug || item.id || item.model || item.name;
         if (slug) {
           candidates.push({
-            ...modelFromSlug(slug, provider),
+            ...modelFromSlug(slug, provider, item),
             ...item,
             slug,
             visibility: item.visibility || "list",
+            input_modalities: item.input_modalities || item.inputModalities || modelFromSlug(slug, provider, item).input_modalities,
             "x-ccswitch-provider": provider.id,
             "x-ccswitch-provider-name": provider.name
           });

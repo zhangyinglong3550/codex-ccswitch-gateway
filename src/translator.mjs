@@ -25,6 +25,102 @@ export function contentToText(content) {
   return String(content);
 }
 
+function imageUrlFromPart(part) {
+  if (!part || typeof part !== "object") return "";
+  const imageUrl = part.image_url ?? part.imageUrl ?? part.url;
+  if (typeof imageUrl === "string") return imageUrl;
+  if (imageUrl && typeof imageUrl === "object") return imageUrl.url || "";
+  return part.image || part.data || "";
+}
+
+function imageDetailFromPart(part) {
+  return part?.detail || part?.image_url?.detail || part?.imageUrl?.detail || undefined;
+}
+
+function isImagePart(part) {
+  if (!part || typeof part !== "object") return false;
+  return part.type === "image" || part.type === "input_image" || part.type === "image_url";
+}
+
+function contentHasImage(content) {
+  return Array.isArray(content) && content.some(isImagePart);
+}
+
+function responsePartToChatPart(part) {
+  if (typeof part === "string") return { type: "text", text: part };
+  if (!part || typeof part !== "object") return null;
+  if (part.type === "input_text" || part.type === "output_text" || part.type === "text") {
+    return { type: "text", text: part.text || "" };
+  }
+  if (isImagePart(part)) {
+    const url = imageUrlFromPart(part);
+    if (!url) return { type: "text", text: "[image omitted: missing image_url]" };
+    const detail = imageDetailFromPart(part);
+    return {
+      type: "image_url",
+      image_url: {
+        url,
+        ...(detail ? { detail } : {})
+      }
+    };
+  }
+  const text = contentToText(part);
+  return text ? { type: "text", text } : null;
+}
+
+function contentToChatContent(content) {
+  if (!contentHasImage(content)) return contentToText(content);
+  const parts = content.map(responsePartToChatPart).filter(Boolean);
+  return parts.length ? parts : contentToText(content);
+}
+
+export function contentToResponsesInputContent(content, role = "user") {
+  if (!Array.isArray(content)) {
+    const text = contentToText(content);
+    return text ? [{ type: role === "assistant" ? "output_text" : "input_text", text }] : [];
+  }
+
+  const out = [];
+  for (const part of content) {
+    if (typeof part === "string") {
+      if (part) out.push({ type: role === "assistant" ? "output_text" : "input_text", text: part });
+      continue;
+    }
+    if (!part || typeof part !== "object") continue;
+    if (part.type === "input_text" || part.type === "output_text" || part.type === "text") {
+      const text = part.text || "";
+      if (text) out.push({ type: role === "assistant" ? "output_text" : "input_text", text });
+      continue;
+    }
+    if (isImagePart(part) && role !== "assistant") {
+      const url = imageUrlFromPart(part);
+      if (url) {
+        out.push({
+          type: "input_image",
+          image_url: url,
+          ...(imageDetailFromPart(part) ? { detail: imageDetailFromPart(part) } : {})
+        });
+      }
+      continue;
+    }
+    const text = contentToText(part);
+    if (text) out.push({ type: role === "assistant" ? "output_text" : "input_text", text });
+  }
+  return out;
+}
+
+function mergeChatContent(left, right) {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    const normalize = (value) => Array.isArray(value) ? value : [{ type: "text", text: value || "" }];
+    return [...normalize(left), ...normalize(right)].filter((part) => {
+      if (!part || typeof part !== "object") return false;
+      if (part.type === "text") return Boolean(part.text);
+      return true;
+    });
+  }
+  return left && right ? `${left}\n\n${right}` : (right || left);
+}
+
 function responseReasoningToText(item) {
   return contentToText(item?.content || item?.summary || item?.text || "");
 }
@@ -42,7 +138,7 @@ function sanitizeChatMessages(messages) {
     if (!message || typeof message !== "object") continue;
     const current = { ...message, role: normalizeRole(message.role) };
     if (current.role !== "assistant") {
-      current.content = typeof current.content === "string" ? current.content : contentToText(current.content);
+      current.content = typeof current.content === "string" ? current.content : contentToChatContent(current.content);
     } else if (current.content !== null && current.content !== undefined && typeof current.content !== "string") {
       current.content = contentToText(current.content);
     }
@@ -78,9 +174,7 @@ function mergeConsecutiveMessages(messages) {
       !prev.tool_calls &&
       !message.tool_calls
     ) {
-      const prevContent = prev.content || "";
-      const nextContent = message.content || "";
-      prev.content = prevContent && nextContent ? `${prevContent}\n\n${nextContent}` : (nextContent || prevContent);
+      prev.content = mergeChatContent(prev.content || "", message.content || "");
       if (message.reasoning_content && !prev.reasoning_content) prev.reasoning_content = message.reasoning_content;
       continue;
     }
@@ -254,7 +348,7 @@ function responsesInputToMessages(input) {
     if (item.type === "message" || item.role) {
       if (pendingToolCalls.length) convertPendingToText();
       const role = normalizeRole(item.role);
-      const message = { role, content: contentToText(item.content || item.output || item.text || "") };
+      const message = { role, content: contentToChatContent(item.content || item.output || item.text || "") };
       if (role === "assistant" && pendingReasoningContent) {
         message.reasoning_content = pendingReasoningContent;
         pendingReasoningContent = "";
@@ -266,6 +360,12 @@ function responsesInputToMessages(input) {
     if (item.type === "input_text" || item.type === "text") {
       if (pendingToolCalls.length) convertPendingToText();
       messages.push({ role: "user", content: contentToText(item) });
+      continue;
+    }
+
+    if (isImagePart(item)) {
+      if (pendingToolCalls.length) convertPendingToText();
+      messages.push({ role: "user", content: contentToChatContent([item]) });
     }
   }
 
