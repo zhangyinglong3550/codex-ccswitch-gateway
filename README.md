@@ -204,6 +204,65 @@ npm run refresh
 
 如果 Codex App 仍显示旧列表，重启 Codex App。
 
+## Electron 桌面控制台
+
+一个可选的桌面控制台，不用敲命令也能管理网关。
+
+### 安装
+
+```bash
+npm install
+```
+
+这会安装 Electron 作为开发依赖。如果 Electron 二进制下载失败，可以设置镜像：
+
+```bash
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install
+```
+
+### 启动
+
+```bash
+npm run electron
+```
+
+### 功能
+
+- **状态**：网关健康检查、模型数、provider 数、CC Switch DB 信息
+- **模型**：从 `/v1/models` 拉取模型列表、`/v1/config` 查看 provider 配置、读取本地 catalog
+- **服务**：安装 / 卸载 / 重启 launchd 服务、查看服务状态
+- **模型测试**：向任意模型发送测试请求，验证连通性
+- **日志**：实时查看网关 stdout 和 stderr 日志
+- **设置**：关键路径展示、DB 自动监听开关
+
+### 自动刷新
+
+控制台监听 `~/.cc-switch/cc-switch.db` 的文件变化。当 CC Switch 更新 provider 后，控制台自动刷新 catalog 并通知网关 reload。
+
+### 安全边界
+
+控制台**不会**：
+
+- 新增、编辑或删除 CC Switch provider
+- 存储或展示 API Key
+- 修改 `~/.codex/config.toml`
+- 编辑 `~/.cc-switch/cc-switch.db`
+
+它只读取网关状态并调用现有 CLI 命令。
+
+### 开发调试
+
+```bash
+# 语法检查
+npm run electron:check
+
+# 自检模式（不启动 UI，执行所有 IPC handler 并输出 JSON）
+./node_modules/.bin/electron electron/main.mjs --self-test
+
+# 截图模式（启动 UI，自动切换标签页截图）
+./node_modules/.bin/electron electron/main.mjs --screenshot
+```
+
 ## 安全说明
 
 不要提交或分享：
