@@ -408,6 +408,63 @@ function responsesToolsToChatTools(tools) {
   return out.length ? out : undefined;
 }
 
+const MOONSHOT_ANYOF_PARENT_KEYWORDS = [
+  "items",
+  "prefixItems",
+  "additionalItems",
+  "contains",
+  "minContains",
+  "maxContains",
+  "properties",
+  "required",
+  "additionalProperties",
+  "patternProperties",
+  "propertyNames",
+  "minProperties",
+  "maxProperties"
+];
+
+function sanitizeMoonshotSchema(schema) {
+  if (!schema || typeof schema !== "object") return schema;
+  if (Array.isArray(schema)) return schema.map(sanitizeMoonshotSchema);
+
+  const next = {};
+  for (const [key, value] of Object.entries(schema)) {
+    next[key] = sanitizeMoonshotSchema(value);
+  }
+
+  if (Array.isArray(next.anyOf)) {
+    for (const keyword of MOONSHOT_ANYOF_PARENT_KEYWORDS) {
+      if (Object.prototype.hasOwnProperty.call(next, keyword)) {
+        const hasKeywordInBranch = next.anyOf.some((branch) => (
+          branch &&
+          typeof branch === "object" &&
+          !Array.isArray(branch) &&
+          Object.prototype.hasOwnProperty.call(branch, keyword)
+        ));
+        if (hasKeywordInBranch) delete next[keyword];
+      }
+    }
+  }
+
+  return next;
+}
+
+function sanitizeMoonshotTools(tools) {
+  if (!Array.isArray(tools)) return tools;
+  return tools.map((tool) => {
+    if (!tool || typeof tool !== "object" || tool.type !== "function") return tool;
+    const fn = tool.function && typeof tool.function === "object" ? tool.function : {};
+    return {
+      ...tool,
+      function: {
+        ...fn,
+        parameters: sanitizeMoonshotSchema(fn.parameters)
+      }
+    };
+  });
+}
+
 export function responsesToChat(body, model, options = {}) {
   const messages = [];
   if (body.instructions) {
@@ -453,7 +510,7 @@ export function responsesToChat(body, model, options = {}) {
   }
 
   const tools = responsesToolsToChatTools(body.tools);
-  if (tools) chat.tools = tools;
+  if (tools) chat.tools = options.moonshotSchemaCompat ? sanitizeMoonshotTools(tools) : tools;
   if (body.tool_choice !== undefined) chat.tool_choice = body.tool_choice;
   return chat;
 }

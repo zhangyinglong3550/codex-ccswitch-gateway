@@ -301,7 +301,8 @@ async function callCustomProvider(body, route, req, res) {
   const chatBody = responsesToChat({ ...body, stream: Boolean(body.stream) }, upstreamModel, {
     reasoning: extractCodexChatReasoning(provider),
     thinkingExcludesEffort: route.kind === "opencode",
-    textifyToolHistory: route.kind === "opencode" && String(upstreamModel).toLowerCase().includes("kimi")
+    textifyToolHistory: route.kind === "opencode" && String(upstreamModel).toLowerCase().includes("kimi"),
+    moonshotSchemaCompat: route.kind === "opencode" && String(upstreamModel).toLowerCase().includes("kimi")
   });
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error("upstream timeout")), UPSTREAM_TIMEOUT_MS);
