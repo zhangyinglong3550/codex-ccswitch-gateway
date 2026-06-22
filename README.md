@@ -1,42 +1,42 @@
 # Codex CC Switch Gateway
 
-Local gateway for using official Codex/ChatGPT models and custom CC Switch models from the same Codex model list.
+一个本机 Codex 模型网关，用来在 Codex App / Codex CLI 里同时选择官方 GPT 模型和 CC Switch 中配置的第三方模型。
 
-It is designed for Codex App and Codex CLI users who already manage third-party model providers in [CC Switch](https://github.com/chenyueban/cc-switch) and want to select models such as DeepSeek, GLM, Kimi, MiMo, or Volcengine from Codex without hand-editing `~/.codex/config.toml`.
+适合已经使用 [CC Switch](https://github.com/chenyueban/cc-switch) 管理第三方模型的人。你可以在 Codex 的同一个模型列表里选择 DeepSeek、GLM、Kimi、MiMo、火山等模型，不需要手动改 `~/.codex/config.toml`。
 
-## What It Does
+## 功能
 
-- Reads Codex providers from `~/.cc-switch/cc-switch.db`.
-- Generates a Codex-compatible model catalog at `~/.codex-ccswitch-gateway/model-catalog.json`.
-- Starts a local OpenAI-compatible Responses endpoint on `http://127.0.0.1:15721`.
-- Routes official GPT models to the local Codex/ChatGPT login state or `OPENAI_API_KEY`.
-- Converts Codex Responses requests to Chat Completions for providers that only expose `/chat/completions`.
-- Preserves tool-call history for Codex App browser/Chrome tools where provider APIs allow it.
-- Reads CC Switch reasoning metadata, including thinking mode and reasoning effort.
-- Uses the `custom` Codex provider id so official and custom models share the same conversation history bucket.
+- 从 `~/.cc-switch/cc-switch.db` 读取 Codex provider、endpoint 和模型目录。
+- 生成 Codex 可读取的模型目录：`~/.codex-ccswitch-gateway/model-catalog.json`。
+- 在本机启动 OpenAI Responses 兼容接口：`http://127.0.0.1:15721`。
+- 官方 GPT 模型转发到本机 Codex / ChatGPT 登录态，或 `OPENAI_API_KEY`。
+- 对只支持 Chat Completions 的第三方 provider，把 Codex Responses 请求转换成 `/chat/completions` 请求。
+- 兼容 Codex App 中浏览器、Chrome 等工具调用历史。
+- 读取 CC Switch 中的思考能力配置，包括思考模式和思考等级。
+- 使用 Codex provider id `custom`，让官方模型和第三方模型尽量共享同一个会话历史列表。
 
-## Supported Routes
+## 已支持的路由
 
-| Provider type | Wire API | Notes |
+| Provider 类型 | 上游协议 | 说明 |
 |---|---:|---|
-| Official GPT | Responses | Requires Codex/ChatGPT login or `OPENAI_API_KEY`. Codex App normally uses streaming. |
-| DeepSeek | Chat Completions | Handles `reasoning_content` and tool history compatibility. |
-| Xiaomi MiMo | Chat Completions | Supports thinking output via `reasoning_content`. |
-| openCode go | Chat Completions | GLM/Kimi are supported; `qwen3.7-max` is hidden because the upstream rejects `oa-compat`. |
-| Volcengine Agentplan/Coding plan | Responses | Preserves `/api/plan/v3` and `/api/coding/v3` endpoint selection. |
+| 官方 GPT | Responses | 依赖 Codex / ChatGPT 登录态或 `OPENAI_API_KEY`；Codex App 通常使用流式请求。 |
+| DeepSeek | Chat Completions | 兼容 `reasoning_content` 和工具历史。 |
+| Xiaomi MiMo | Chat Completions | 将 `reasoning_content` 转回 Codex Responses reasoning。 |
+| openCode go | Chat Completions | 已兼容 GLM/Kimi；`qwen3.7-max` 因上游不支持 `oa-compat` 默认隐藏。 |
+| 火山 Agentplan / Coding plan | Responses | 保留 `/api/plan/v3` 和 `/api/coding/v3` 路由选择。 |
 
-## Requirements
+## 环境要求
 
-- macOS.
-- Node.js 18 or newer.
-- `sqlite3` available in `PATH`.
-- CC Switch installed and configured for Codex providers.
-- Codex App or Codex CLI installed.
-- Official GPT access through Codex/ChatGPT login, or `OPENAI_API_KEY`.
+- macOS。
+- Node.js 18 或更高版本。
+- 系统能运行 `sqlite3`。
+- 已安装并配置 CC Switch。
+- 已安装 Codex App 或 Codex CLI。
+- 官方 GPT 需要已登录 Codex / ChatGPT，或者设置 `OPENAI_API_KEY`。
 
-No API keys are stored in this project. Keys remain in CC Switch, Codex auth, or your shell environment.
+本项目不会保存 API Key。密钥仍然留在 CC Switch、Codex auth 文件或你的 shell 环境变量中。
 
-## Install
+## 安装
 
 ```bash
 git clone https://github.com/zhangyinglong3550/codex-ccswitch-gateway.git
@@ -46,58 +46,68 @@ npm run service:install
 npm run profile
 ```
 
-`npm run profile` writes `~/.codex/ccswitch-gateway.config.toml`. It does not patch `~/.codex/config.toml`.
+`npm run profile` 会写入：
 
-## Use With Codex App
+```text
+~/.codex/ccswitch-gateway.config.toml
+```
 
-1. Start the gateway:
+它不会修改你的主配置：
+
+```text
+~/.codex/config.toml
+```
+
+## 在 Codex App 中使用
+
+1. 启动本机网关：
 
    ```bash
    cd codex-ccswitch-gateway
    npm run service:install
    ```
 
-2. Make sure the profile exists:
+2. 确认 profile 已生成：
 
    ```bash
    npm run profile
    ```
 
-3. Restart Codex App if the model list does not refresh.
+3. 打开或重启 Codex App。
 
-4. Select a model from the Codex model picker.
+4. 在模型选择器里选择官方 GPT 或第三方模型。
 
-The gateway URL is:
+网关地址：
 
 ```text
 http://127.0.0.1:15721/v1
 ```
 
-## Use With Codex CLI
+## 在 Codex CLI 中使用
 
 ```bash
 codex -p ccswitch-gateway
 ```
 
-## Add Or Refresh Models
+## 添加或刷新模型
 
-Models come from CC Switch, not from files in this repository.
+模型来源是 CC Switch，不是在本仓库里手写。
 
-1. Open CC Switch.
-2. Add or edit a Codex provider.
-3. Fill in base URL and API key in CC Switch.
-4. Enable local route mapping if the provider is OpenAI Chat compatible rather than native Responses.
-5. Enable thinking mode / reasoning effort only when the upstream actually supports it.
-6. Refresh the gateway:
+1. 打开 CC Switch。
+2. 添加或编辑 Codex provider。
+3. 在 CC Switch 里填写 base URL 和 API Key。
+4. 如果 provider 是 OpenAI Chat Completions 兼容接口，而不是原生 Responses API，开启本地路由映射。
+5. 如果模型支持思考能力，再按供应商真实能力开启思考模式 / 思考等级。
+6. 回到本项目执行：
 
    ```bash
    cd codex-ccswitch-gateway
    npm run refresh
    ```
 
-7. Restart Codex App if the model picker still shows the old list.
+7. 如果 Codex App 模型列表仍没变化，重启 Codex App。
 
-## Useful Commands
+## 常用命令
 
 ```bash
 npm run doctor
@@ -110,7 +120,7 @@ npm run history:unify:dry-run
 npm run history:unify
 ```
 
-## Health Checks
+## 健康检查
 
 ```bash
 curl -s http://127.0.0.1:15721/health
@@ -118,7 +128,7 @@ curl -s http://127.0.0.1:15721/v1/models
 curl -s http://127.0.0.1:15721/v1/config
 ```
 
-Quick streaming smoke test:
+流式 smoke test：
 
 ```bash
 curl -s -N http://127.0.0.1:15721/v1/responses \
@@ -126,66 +136,87 @@ curl -s -N http://127.0.0.1:15721/v1/responses \
   -d '{"model":"gpt-5.4-mini","stream":true,"input":"只回复 OK"}'
 ```
 
-## Conversation History
+## 会话历史
 
-Codex groups conversations by `model_provider`. This gateway uses `custom` so official and custom models can appear in the same history bucket.
+Codex 会按 `model_provider` 分组显示会话。这个网关使用 `custom`，因此官方模型和第三方模型可以尽量出现在同一个历史列表中。
 
-To preview historical migration:
+预览历史迁移影响：
 
 ```bash
 npm run history:unify:dry-run
 ```
 
-To migrate old local Codex history to `custom`:
+执行迁移：
 
 ```bash
 npm run history:unify
 ```
 
-Backups are written to:
+备份目录：
 
 ```text
 ~/.codex-ccswitch-gateway/history-unify-backups/
 ```
 
-## Troubleshooting
+## 排障
 
-**Official GPT works in Codex but fails through the gateway**
+### 官方 GPT 在原生 Codex 可用，但通过网关失败
 
-Codex App normally sends streaming requests. Non-streaming requests to the ChatGPT Codex backend may return `Stream must be set to true`. Test with `stream: true`.
+Codex App 通常发送流式请求。ChatGPT Codex 后端对非流式请求可能返回：
 
-If you see `fetch failed`, check local proxy/DNS tools such as ProxyBridge. The gateway does not force a public DNS or proxy.
+```text
+Stream must be set to true
+```
 
-**openCode go returns `cannot specify both 'thinking' and 'reasoning_effort'`**
+测试时请带上 `stream: true`。
 
-This is handled by the gateway for the `opencode` provider: it sends `thinking` without `reasoning_effort`.
+如果看到 `fetch failed`，优先检查本机代理、DNS、ProxyBridge 或公司网络策略。网关默认不强制公共 DNS，也不接管系统代理。
 
-**Volcengine returns missing `input.content.text`**
+### openCode go 报 `cannot specify both 'thinking' and 'reasoning_effort'`
 
-The gateway normalizes Responses message content before forwarding to Volcengine. Run `npm run service:install` after updating to this version.
+网关已经对 `opencode` provider 做了兼容：发送 `thinking` 时不会再同时发送 `reasoning_effort`。更新后执行：
 
-**A newly added model does not appear**
+```bash
+npm run service:install
+```
 
-Run:
+### Kimi 在工具调用后报 `tool_call_id` 或 `tool_calls`
+
+网关已经对 `opencode + Kimi` 做了专门兼容：旧工具调用历史会压成普通文本上下文，同时保留当前轮工具定义。更新后执行：
+
+```bash
+npm run service:install
+```
+
+### 火山报缺少 `input.content.text`
+
+网关会在转发到火山 Responses API 前规整 message content。更新后执行：
+
+```bash
+npm run service:install
+```
+
+### 新增模型没有出现
 
 ```bash
 npm run refresh
 ```
 
-Then restart Codex App if needed.
+如果 Codex App 仍显示旧列表，重启 Codex App。
 
-## Security
+## 安全说明
 
-Do not commit or share:
+不要提交或分享：
 
 - `~/.cc-switch/cc-switch.db`
 - `~/.codex/auth.json`
-- `~/.codex/config.toml` if it contains local auth or internal provider data
+- 含私有 provider 信息的 `~/.codex/config.toml`
 - `~/.codex-ccswitch-gateway/*.log`
-- API keys, bearer tokens, cookies, or copied CC Switch provider JSON
+- API Key、Bearer Token、Cookie
+- 从 CC Switch 复制出来的完整 provider JSON
 
-See [SECURITY.md](./SECURITY.md).
+详见 [SECURITY.md](./SECURITY.md)。
 
-## License
+## 许可证
 
 MIT
