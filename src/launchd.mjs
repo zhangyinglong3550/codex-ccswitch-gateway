@@ -6,7 +6,33 @@ import { GATEWAY_HOME, LAUNCH_AGENTS_DIR, LAUNCHD_LABEL, LAUNCHD_PLIST_PATH } fr
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..");
-const CLI_PATH = path.join(PROJECT_ROOT, "bin", "cli.mjs");
+
+// 打包模式下 CLI 和 gateway-runner 都在 app resources 里。
+// 开发模式下它们在项目根目录。
+function isPackaged() {
+  // Electron 打包后 process.resourcesPath 指向 app/Contents/Resources
+  if (process.versions.electron && process.resourcesPath) {
+    return path.basename(__dirname) !== "src" || !fs.existsSync(path.join(PROJECT_ROOT, "bin", "cli.mjs"));
+  }
+  return false;
+}
+
+function getRunnerPath() {
+  if (process.resourcesPath && fs.existsSync(path.join(process.resourcesPath, "gateway-runner.mjs"))) {
+    return path.join(process.resourcesPath, "gateway-runner.mjs");
+  }
+  return path.join(__dirname, "..", "electron", "gateway-runner.mjs");
+}
+
+function getCliPath() {
+  const dev = path.join(PROJECT_ROOT, "bin", "cli.mjs");
+  if (fs.existsSync(dev)) return dev;
+  if (process.resourcesPath) {
+    const packed = path.join(process.resourcesPath, "app", "bin", "cli.mjs");
+    if (fs.existsSync(packed)) return packed;
+  }
+  return dev;
+}
 
 function xmlEscape(value) {
   return String(value)
@@ -19,6 +45,15 @@ function xmlEscape(value) {
 function plistContent({ nodePath = process.execPath } = {}) {
   const stdoutPath = path.join(GATEWAY_HOME, "gateway.out.log");
   const stderrPath = path.join(GATEWAY_HOME, "gateway.err.log");
+  const runnerPath = getRunnerPath();
+  const cliPath = getCliPath();
+  // 优先用 gateway-runner.mjs（支持打包模式），回退到 CLI
+  const entryScript = fs.existsSync(runnerPath) ? runnerPath : cliPath;
+  const entryArg = entryScript === runnerPath ? [] : ["start"];
+  const programArgs = [nodePath, entryScript, ...entryArg];
+
+  const programArgsXml = programArgs.map((a) => `    <string>${xmlEscape(a)}</string>`).join("\n");
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -27,12 +62,8 @@ function plistContent({ nodePath = process.execPath } = {}) {
   <string>${xmlEscape(LAUNCHD_LABEL)}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${xmlEscape(nodePath)}</string>
-    <string>${xmlEscape(CLI_PATH)}</string>
-    <string>start</string>
+${programArgsXml}
   </array>
-  <key>WorkingDirectory</key>
-  <string>${xmlEscape(PROJECT_ROOT)}</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -45,6 +76,8 @@ function plistContent({ nodePath = process.execPath } = {}) {
   <dict>
     <key>PATH</key>
     <string>${xmlEscape(process.env.PATH || "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin")}</string>
+    <key>ELECTRON_RUN_AS_NODE</key>
+    <string>1</string>
   </dict>
 </dict>
 </plist>

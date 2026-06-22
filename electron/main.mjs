@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import os from "node:os";
 
+// 网关作为独立 launchd 后台服务运行，不内嵌在 Electron 里。
+// app 启动时检测网关是否在线，离线则自动安装 launchd 服务。
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const CLI_PATH = path.join(PROJECT_ROOT, "bin", "cli.mjs");
@@ -30,6 +33,25 @@ let dbWatchEnabled = true;
 
 const gatewayUrl = (p) => `${GATEWAY_BASE}${p}`;
 
+async function autoEnsureGateway() {
+  // 先检测网关是否已在线
+  const h = await gatewayFetch("/health", { timeoutMs: 2000 });
+  if (h.ok) { console.log("[gateway] already running"); return { started: false, reason: "already running" }; }
+  // 网关离线，自动安装 launchd 服务
+  console.log("[gateway] offline, auto-installing launchd service...");
+  const res = await serviceInstall();
+  if (res.ok) {
+    // 等待服务启动
+    for (let i = 0; i < 8; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      const check = await gatewayFetch("/health", { timeoutMs: 2000 });
+      if (check.ok) { console.log("[gateway] service started and online"); return { started: true, reason: "service installed" }; }
+    }
+    return { started: false, reason: "service installed but health check failed" };
+  }
+  return { started: false, reason: "service install failed", error: res.error };
+}
+
 async function gatewayFetch(p, opts = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), opts.timeoutMs || 4000);
@@ -45,7 +67,7 @@ async function gatewayFetch(p, opts = {}) {
 
 function runCli(args, { timeoutMs = 15000 } = {}) {
   return new Promise((resolve) => {
-    execFile(NODE_BIN, [CLI_PATH, ...args], { cwd: PROJECT_ROOT, encoding: "utf8", timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, env: { ...process.env } }, (err, stdout, stderr) => {
+    execFile(NODE_BIN, [CLI_PATH, ...args], { cwd: PROJECT_ROOT, encoding: "utf8", timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } }, (err, stdout, stderr) => {
       if (err && err.killed) { resolve({ ok: false, error: `Command timed out after ${timeoutMs}ms`, stdout, stderr }); return; }
       if (err) { resolve({ ok: false, error: err.message || String(err), stdout, stderr }); return; }
       let parsed = null; try { parsed = JSON.parse(stdout.trim()); } catch { parsed = null; }
@@ -245,7 +267,10 @@ async function runSelfTest() {
 
 app.whenReady().then(() => {
   if (process.argv.includes("--self-test")) { registerIpc(); runSelfTest().then(() => app.quit()); return; }
-  registerIpc(); createWindow(); app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  registerIpc();
+  autoEnsureGateway().then((r) => console.log("[gateway] autoEnsure:", JSON.stringify(r)));
+  createWindow();
+  app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on("window-all-closed", () => { stopDbWatch(); if (process.platform !== "darwin") app.quit(); });
 app.on("before-quit", stopDbWatch);

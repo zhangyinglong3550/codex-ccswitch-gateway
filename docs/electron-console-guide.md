@@ -6,23 +6,42 @@
 
 ## 前置条件
 
-- macOS
-- Node.js 18+
+- macOS（Apple Silicon 或 Intel）
 - CC Switch 已安装并配置好 Codex provider
-- 网关服务已安装（`npm run service:install`）
+- Codex App 或 Codex CLI 已安装
 
-## 安装
+不需要单独安装 Node.js。dmg 里的 Electron app 自带了运行时。
+
+## 下载安装（推荐）
+
+1. 从 GitHub Releases 下载 `Codex CC Switch Gateway-x.x.x-arm64.dmg`
+2. 打开 dmg，把 app 拖到「应用程序」
+3. 打开 app
+4. 首次打开会自动安装 launchd 后台服务并启动网关
+5. 在 CC Switch 里配置好 provider 后，重启 Codex App
+
+## 从源码运行（开发者）
 
 ```bash
+git clone https://github.com/zhangyinglong3550/codex-ccswitch-gateway.git
 cd codex-ccswitch-gateway
 npm install
-```
-
-## 启动
-
-```bash
 npm run electron
 ```
+
+如果 Electron 二进制下载失败：
+
+```bash
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install
+```
+
+## 打包成 dmg
+
+```bash
+npm run dist
+```
+
+生成的 dmg 在 `dist/` 目录下。
 
 ## 页面说明
 
@@ -110,11 +129,23 @@ npm run electron
 - CC Switch 写入 DB 后可能需要 2-3 秒被检测到（轮询间隔 2 秒）
 - 也可以手动点击"立即刷新"
 
-### Electron 无法启动
+### Electron 无法启动（dmg 安装版）
+
+- 首次打开如果提示"无法验证开发者"，右键点击 app 选择"打开"
+- 确认 macOS 版本 >= 10.12（dmg 使用 APFS 格式）
+- 如果 app 闪退，打开「终端」运行 `/Applications/Codex\ CC\ Switch\ Gateway.app/Contents/MacOS/Codex\ CC\ Switch\ Gateway` 查看错误日志
+
+### Electron 无法启动（源码版）
 
 - 确认 `npm install` 成功（Electron 二进制已下载）
 - 检查 `node_modules/electron/dist/Electron.app` 是否存在
 - 如果下载失败，设置镜像：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install`
+
+### 打开控制台后网关仍然离线
+
+- 控制台首次打开会自动安装 launchd 服务，可能需要几秒钟
+- 如果 10 秒后仍然离线，去「服务」页手动点击「安装并启动」
+- 检查端口 15721 是否被其他程序占用
 
 ## 安全注意事项
 
@@ -147,12 +178,22 @@ npm run electron:check
 
 ```
 electron/
-  main.mjs        # 主进程：IPC handler、网关 HTTP 调用、CLI 调用、DB 监听
-  preload.cjs     # 预加载：contextBridge 暴露安全 API
+  main.mjs              # 主进程：IPC handler、网关 HTTP 调用、CLI 调用、DB 监听、自动启动服务
+  preload.cjs           # 预加载：contextBridge 暴露安全 API
+  gateway-runner.mjs    # launchd 后台服务入口（ELECTRON_RUN_AS_NODE=1 调用）
   renderer/
-    index.html    # 页面结构
-    style.css     # 暗色工具型视觉
-    app.js        # 渲染层逻辑：标签切换、数据加载、按钮绑定
+    index.html          # 页面结构
+    style.css           # 暗色工具型视觉
+    app.js              # 渲染层逻辑：标签切换、数据加载、按钮绑定
+electron-builder.yml    # 打包配置
 ```
 
-主进程通过 `execFile` 调用 `node bin/cli.mjs <command>`，通过 `fetch` 调用网关 HTTP 端点。渲染层通过 `contextBridge` 暴露的 `window.api` 与主进程通信，`contextIsolation: true`，`nodeIntegration: false`。
+主进程通过 `execFile` 调用 `node bin/cli.mjs <command>`（开发模式用系统 node，打包模式用 `ELECTRON_RUN_AS_NODE=1` 让 Electron 二进制当 node 用），通过 `fetch` 调用网关 HTTP 端点。渲染层通过 `contextBridge` 暴露的 `window.api` 与主进程通信，`contextIsolation: true`，`nodeIntegration: false`。
+
+### 网关与控制台的关系
+
+- 网关作为独立 launchd 后台服务运行，不依赖控制台进程
+- 控制台启动时检测网关是否在线，离线则自动安装 launchd 服务
+- 关闭控制台不影响网关运行
+- 重启 Mac 后网关自动启动（launchd KeepAlive + RunAtLoad）
+- 打包后的 app 使用 `ELECTRON_RUN_AS_NODE=1` 让 Electron 二进制充当 node 运行 gateway-runner.mjs，不需要用户安装 Node.js

@@ -1,0 +1,34 @@
+appId: com.local.codex-ccswitch-gateway
+productName: Codex CC Switch Gateway
+directories:
+  output: dist
+  buildResources: build
+files:
+  - electron/**/*
+  - bin/**/*
+  - src/**/*
+  - package.json
+  - "!node_modules/**/*"
+  - "!dist/**/*"
+  - "!docs/**/*"
+  - "!.git/**/*"
+extraResources:
+  - from: electron/gateway-runner.mjs
+    to: gateway-runner.mjs
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  identity: null
+dmg:
+  title: Codex CC Switch Gateway
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+publish: null

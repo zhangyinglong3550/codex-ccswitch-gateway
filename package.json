@@ -32,13 +32,19 @@
     "service:uninstall": "node ./bin/cli.mjs service-uninstall",
     "electron": "electron electron/main.mjs",
     "electron:check": "node --check electron/main.mjs && node --check electron/preload.cjs && node --check electron/renderer/app.js",
-    "check": "node --check bin/cli.mjs && node --check src/server.mjs && node --check src/launchd.mjs && node --check src/catalog.mjs && node --check src/ccswitch.mjs && node --check src/codex-config.mjs && node --check src/translator.mjs && node --check src/history-unify.mjs && node --check src/paths.mjs"
+    "check": "node --check bin/cli.mjs && node --check src/server.mjs && node --check src/launchd.mjs && node --check src/catalog.mjs && node --check src/ccswitch.mjs && node --check src/codex-config.mjs && node --check src/translator.mjs && node --check src/history-unify.mjs && node --check src/paths.mjs",
+    "dist": "electron-builder --mac --config electron-builder.yml",
+    "dist:check": "npm run electron:check && npm run check"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {},
   "devDependencies": {
-    "electron": "^31.0.0"
-  }
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {},
+  "main": "electron/main.mjs",
+  "author": "zhangyinglong"
 }

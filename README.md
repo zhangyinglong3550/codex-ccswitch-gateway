@@ -207,25 +207,40 @@ npm run refresh
 
 ## Electron 桌面控制台
 
-一个可选的桌面控制台，不用敲命令也能管理网关。
+一个桌面控制台，不用敲命令也能管理网关。打开就自动启动后台网关服务，关掉控制台网关也继续运行。
 
-### 安装
+### 下载安装（普通用户）
+
+1. 下载 `Codex CC Switch Gateway-x.x.x-arm64.dmg`（GitHub Releases 页面）
+2. 打开 dmg，把 app 拖到「应用程序」
+3. 打开 app
+4. 首次打开会自动安装 launchd 后台服务并启动网关
+5. 在 CC Switch 里配置好 provider 后，重启 Codex App 即可使用
+
+不需要安装 Node.js，不需要 clone 仓库，不需要跑任何命令。
+
+### 从源码运行（开发者）
 
 ```bash
+git clone https://github.com/zhangyinglong3550/codex-ccswitch-gateway.git
+cd codex-ccswitch-gateway
 npm install
+npm run electron
 ```
 
-这会安装 Electron 作为开发依赖。如果 Electron 二进制下载失败，可以设置镜像：
+如果 Electron 二进制下载失败，设置镜像：
 
 ```bash
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install
 ```
 
-### 启动
+### 打包成 dmg
 
 ```bash
-npm run electron
+npm run dist
 ```
+
+生成的 dmg 在 `dist/` 目录下。
 
 ### 功能
 
@@ -235,6 +250,10 @@ npm run electron
 - **模型测试**：向任意模型发送测试请求，验证连通性
 - **日志**：实时查看网关 stdout 和 stderr 日志
 - **设置**：关键路径展示、DB 自动监听开关
+
+### 自动启动
+
+打开控制台时，如果网关未运行，会自动安装 launchd 后台服务并启动。关闭控制台后网关继续运行。重启 Mac 后网关也会自动启动（launchd 的 RunAtLoad 和 KeepAlive）。
 
 ### 自动刷新
 

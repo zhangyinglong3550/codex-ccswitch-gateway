@@ -76,11 +76,24 @@ codex -p ccswitch-gateway
 
 ## Electron 桌面控制台
 
-如果不想敲命令，可以用桌面控制台管理网关。
+如果不想敲命令，可以用桌面控制台管理网关。打开就自动启动后台网关，关掉控制台网关也继续运行。
 
-### 安装和启动
+### 下载安装（推荐）
+
+1. 从 GitHub Releases 下载 `Codex CC Switch Gateway-x.x.x-arm64.dmg`
+2. 打开 dmg，把 app 拖到「应用程序」
+3. 打开 app，首次会自动安装后台服务并启动网关
+4. 在 CC Switch 里配置好 provider 后，重启 Codex App
+
+不需要安装 Node.js，不需要 clone 仓库，不需要跑任何命令。
+
+### 从源码运行
+
+如果需要开发或调试：
 
 ```bash
+git clone https://github.com/zhangyinglong3550/codex-ccswitch-gateway.git
+cd codex-ccswitch-gateway
 npm install
 npm run electron
 ```
