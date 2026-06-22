@@ -42,7 +42,59 @@ function xmlEscape(value) {
     .replaceAll('"', "&quot;");
 }
 
-function plistContent({ nodePath = process.execPath } = {}) {
+function nodeSupportsZstd(nodePath) {
+  try {
+    const out = execFileSync(nodePath, ["-p", "typeof require('node:zlib').zstdDecompressSync"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 3000
+    });
+    return out.trim() === "function";
+  } catch {
+    return false;
+  }
+}
+
+function firstExistingPath(paths) {
+  return paths.find((p) => p && fs.existsSync(p)) || "";
+}
+
+function findLaunchdNodePath() {
+  const envPath = process.env.CODEX_CCSWITCH_NODE;
+  const shellNode = (() => {
+    try {
+      return execFileSync("/usr/bin/env", ["which", "node"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 3000,
+        env: { ...process.env }
+      }).trim();
+    } catch {
+      return "";
+    }
+  })();
+  const candidates = [
+    envPath,
+    shellNode,
+    "/opt/homebrew/bin/node",
+    "/usr/local/bin/node",
+    firstExistingPath([
+      "/opt/homebrew/opt/node/bin/node",
+      "/usr/local/opt/node/bin/node"
+    ]),
+    process.execPath
+  ].filter(Boolean);
+
+  const seen = new Set();
+  for (const candidate of candidates) {
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    if (nodeSupportsZstd(candidate)) return candidate;
+  }
+  return process.execPath;
+}
+
+function plistContent({ nodePath = findLaunchdNodePath() } = {}) {
   const stdoutPath = path.join(GATEWAY_HOME, "gateway.out.log");
   const stderrPath = path.join(GATEWAY_HOME, "gateway.err.log");
   const runnerPath = getRunnerPath();
@@ -78,6 +130,8 @@ ${programArgsXml}
     <string>${xmlEscape(process.env.PATH || "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin")}</string>
     <key>ELECTRON_RUN_AS_NODE</key>
     <string>1</string>
+    <key>CODEX_CCSWITCH_NODE</key>
+    <string>${xmlEscape(nodePath)}</string>
   </dict>
 </dict>
 </plist>
@@ -106,6 +160,7 @@ export function installLaunchdService({ load = true } = {}) {
 
   return {
     plistPath: LAUNCHD_PLIST_PATH,
+    nodePath: findLaunchdNodePath(),
     stdoutPath: path.join(GATEWAY_HOME, "gateway.out.log"),
     stderrPath: path.join(GATEWAY_HOME, "gateway.err.log")
   };

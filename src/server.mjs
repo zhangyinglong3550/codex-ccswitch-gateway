@@ -1,5 +1,6 @@
 import http from "node:http";
 import fs from "node:fs";
+import zlib from "node:zlib";
 import { CODEX_HOME, DEFAULT_HOST, DEFAULT_PORT } from "./paths.mjs";
 import { buildCatalog, writeCatalog } from "./catalog.mjs";
 import {
@@ -15,13 +16,47 @@ import path from "node:path";
 
 const UPSTREAM_TIMEOUT_MS = Number(process.env.CODEX_CCSWITCH_UPSTREAM_TIMEOUT_MS || "180000");
 
+function decodeRequestBody(buffer, encodingHeader = "") {
+  const encodings = String(encodingHeader || "identity")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+    .reverse();
+  let out = buffer;
+  for (const encoding of encodings) {
+    if (encoding === "identity") continue;
+    if (encoding === "gzip" || encoding === "x-gzip") {
+      out = zlib.gunzipSync(out);
+      continue;
+    }
+    if (encoding === "br") {
+      out = zlib.brotliDecompressSync(out);
+      continue;
+    }
+    if (encoding === "deflate") {
+      out = zlib.inflateSync(out);
+      continue;
+    }
+    if (encoding === "zstd") {
+      if (typeof zlib.zstdDecompressSync !== "function") {
+        throw new Error("Unsupported content-encoding: zstd requires Node.js with zstd support");
+      }
+      out = zlib.zstdDecompressSync(out);
+      continue;
+    }
+    throw new Error(`Unsupported content-encoding: ${encoding}`);
+  }
+  return out;
+}
+
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     req.on("data", (chunk) => chunks.push(chunk));
     req.on("end", () => {
       try {
-        const raw = Buffer.concat(chunks).toString("utf8");
+        const body = decodeRequestBody(Buffer.concat(chunks), req.headers["content-encoding"]);
+        const raw = body.toString("utf8");
         resolve(raw ? JSON.parse(raw) : {});
       } catch (err) {
         reject(err);

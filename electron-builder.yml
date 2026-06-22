@@ -1,5 +1,6 @@
 appId: com.local.codex-ccswitch-gateway
 productName: Codex CC Switch Gateway
+asar: false
 directories:
   output: dist
   buildResources: build
