@@ -99,6 +99,36 @@ function responsesUrl(baseUrl, kind) {
   return `${base}/responses`;
 }
 
+function isLocalEndpoint(url) {
+  try {
+    const host = new URL(url).hostname;
+    return host === "127.0.0.1" || host === "localhost" || host === "::1";
+  } catch {
+    return false;
+  }
+}
+
+function fetchFailureDetail(err) {
+  const code = err?.cause?.code || err?.code || "";
+  const causeMessage = err?.cause?.message || "";
+  return [err?.message || String(err), code, causeMessage].filter(Boolean).join(" / ");
+}
+
+async function fetchUpstream(url, init, { retryLocal = true } = {}) {
+  const local = isLocalEndpoint(url);
+  const headers = {
+    ...(init.headers || {}),
+    "Connection": "close"
+  };
+  try {
+    return await fetch(url, { ...init, headers });
+  } catch (err) {
+    if (!retryLocal || !local) throw err;
+    logRequest("upstream fetch retry", { url: new URL(url).origin, error: fetchFailureDetail(err) });
+    return await fetch(url, { ...init, headers });
+  }
+}
+
 function effectiveWireApi(provider) {
   const kind = providerKind(provider);
   const configured = extractWireApi(provider);
@@ -237,7 +267,29 @@ function officialBody(body, backend) {
   return normalized;
 }
 
-function responsesBody(body) {
+function isVolcengineGlm52(route, upstreamModel) {
+  return route?.kind === "volcengine" && String(upstreamModel || route?.entry?.model || route?.entry?.slug || "").toLowerCase() === "glm-5.2";
+}
+
+function dropTrailingAssistantPrefill(input) {
+  if (!Array.isArray(input)) return input;
+  const next = [...input];
+  while (next.length > 0) {
+    const last = next[next.length - 1];
+    if (!last || typeof last !== "object" || last.type !== "message" || last.role !== "assistant") break;
+    next.pop();
+  }
+  if (next.length > 0) return next;
+  return [
+    {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: "Continue." }]
+    }
+  ];
+}
+
+function responsesBody(body, options = {}) {
   const normalized = { ...body };
   const reasoningEffort = normalized.reasoning_effort || normalized.model_reasoning_effort || normalized.reasoning?.effort;
   if (reasoningEffort && !normalized.reasoning_effort) {
@@ -279,6 +331,9 @@ function responsesBody(body) {
       return Array.isArray(item.content) && item.content.length > 0;
     });
   }
+  if (options.dropAssistantPrefill) {
+    normalized.input = dropTrailingAssistantPrefill(normalized.input);
+  }
   return normalized;
 }
 
@@ -291,7 +346,7 @@ async function proxyOfficial(body, req, res) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error("upstream timeout")), UPSTREAM_TIMEOUT_MS);
   req.on("aborted", () => controller.abort(new Error("client disconnected")));
-  const upstream = await fetch(auth.url, {
+  const upstream = await fetchUpstream(auth.url, {
     method: "POST",
     signal: controller.signal,
     headers: {
@@ -342,7 +397,7 @@ async function callCustomProvider(body, route, req, res) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error("upstream timeout")), UPSTREAM_TIMEOUT_MS);
   req.on("aborted", () => controller.abort(new Error("client disconnected")));
-  const upstream = await fetch(chatUrl(endpoint, route.kind), {
+  const upstream = await fetchUpstream(chatUrl(endpoint, route.kind), {
     method: "POST",
     signal: controller.signal,
     headers: {
@@ -377,11 +432,14 @@ async function callCustomProvider(body, route, req, res) {
 
 async function proxyCustomResponses(body, route, req, res, { endpoint, apiKey }) {
   const upstreamModel = route.entry?.model || route.entry?.backend_model || body.model;
-  const upstreamBody = responsesBody({ ...body, model: upstreamModel });
+  const upstreamBody = responsesBody(
+    { ...body, model: upstreamModel },
+    { dropAssistantPrefill: isVolcengineGlm52(route, upstreamModel) }
+  );
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error("upstream timeout")), UPSTREAM_TIMEOUT_MS);
   req.on("aborted", () => controller.abort(new Error("client disconnected")));
-  const upstream = await fetch(responsesUrl(endpoint, route.kind), {
+  const upstream = await fetchUpstream(responsesUrl(endpoint, route.kind), {
     method: "POST",
     signal: controller.signal,
     headers: {
@@ -489,7 +547,7 @@ export function createServer() {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(new Error("upstream timeout")), UPSTREAM_TIMEOUT_MS);
         req.on("aborted", () => controller.abort(new Error("client disconnected")));
-        const upstream = await fetch(chatUrl(endpoint, route.kind), {
+        const upstream = await fetchUpstream(chatUrl(endpoint, route.kind), {
           method: "POST",
           signal: controller.signal,
           headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
